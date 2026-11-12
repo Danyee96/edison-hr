@@ -1,0 +1,1 @@
+import{r as s}from"./ui-ZNezDwJH.js";function l(){return s.useCallback(r=>{const t=r.trim().split(" ");if(t.length===0)return"";if(t.length===1)return t[0].charAt(0).toUpperCase();const n=t[0].charAt(0),e=t[t.length-1].charAt(0);return`${n}${e}`.toUpperCase()},[])}export{l as u};

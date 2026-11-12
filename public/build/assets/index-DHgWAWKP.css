@@ -1,0 +1,1 @@
+.cashfree-modal-backdrop,.cashfree-modal,[id*=cashfree],[class*=cashfree]{z-index:99999!important}.cashfree-modal-content,.cashfree-modal iframe,[id*=cashfree] iframe{pointer-events:auto!important;z-index:100000!important}.cashfree-modal-backdrop{pointer-events:auto!important}
