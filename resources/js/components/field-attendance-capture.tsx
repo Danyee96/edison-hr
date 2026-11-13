@@ -68,11 +68,16 @@ export default function FieldAttendanceCapture({ clockedIn, completed }: { clock
     setStep('selfie'); setSelfie(''); setArea(''); setError(''); setSecondsLeft(120);
     deadline.current = 0; attemptToken.current = '';
     try {
+      const csrfCookie = document.cookie.split('; ').find(cookie => cookie.startsWith('XSRF-TOKEN='))?.slice('XSRF-TOKEN='.length);
+      const csrfHeaders = csrfCookie
+        ? { 'X-XSRF-TOKEN': decodeURIComponent(csrfCookie) }
+        : { 'X-CSRF-TOKEN': document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || '' };
       const response = await fetch(route('hr.field-attendance.start'), {
         method: 'POST', credentials: 'same-origin',
-        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content || '' },
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', ...csrfHeaders },
         body: JSON.stringify({ type: clockedIn ? 'out' : 'in' }),
       });
+      if (response.status === 419 || response.status === 401) throw new Error('Your session has expired. Refresh the page and sign in again.');
       if (!response.ok) throw new Error('Unable to start attendance. Please try again.');
       const result = await response.json();
       if (attemptId.current !== id) return;
