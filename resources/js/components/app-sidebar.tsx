@@ -160,6 +160,10 @@ export function AppSidebar() {
             });
         }
 
+        if (hasPermission(permissions, 'manage-attendance-records') && hasPermission(permissions, 'manage-any-attendance-records')) {
+            items.push({ title: t('Field Attendance'), href: route('hr.field-attendance.index'), icon: Fingerprint });
+        }
+
         if (
             hasPermission(permissions, 'manage-working-days-settings') ||
             hasPermission(permissions, 'manage-attendance-records') ||
@@ -1032,7 +1036,10 @@ export function AppSidebar() {
         return items;
     };
 
-    const mainNavItems = userRole === 'superadmin' ? getSuperAdminNavItems() : getCompanyNavItems();
+    const mainNavItems = auth?.fieldAttendance ? [
+        { title: t('Today'), href: route('dashboard'), icon: Clock },
+        { title: t('Monthly Report'), href: route('hr.field-attendance.my'), icon: CalendarDays },
+    ] : userRole === 'superadmin' ? getSuperAdminNavItems() : getCompanyNavItems();
 
     const { position, effectivePosition } = useLayout();
     const { variant, collapsible, style } = useSidebarSettings();

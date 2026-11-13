@@ -132,6 +132,15 @@ class HandleInertiaRequests extends Middleware
             }
         }
 
+        if ($request->user()?->type === 'employee' && $request->user()?->employee?->field_attendance) {
+            $globalSettings = array_intersect_key($globalSettings, array_flip([
+                'logoDark', 'logoLight', 'favicon', 'titleText', 'footerText', 'themeColor', 'customColor',
+                'sidebarVariant', 'sidebarStyle', 'layoutDirection', 'themeMode', 'defaultLanguage',
+                'dateFormat', 'timeFormat', 'defaultTimezone', 'currencySymbol', 'currencyNname',
+                'defaultCurrency', 'base_url', 'image_url', 'is_demo', 'is_saas', 'availableLanguages',
+            ]));
+        }
+
         $currentCompany = $this->currentCompanyFor($request->user());
 
         return [
@@ -143,6 +152,7 @@ class HandleInertiaRequests extends Middleware
             'csrf_token' => csrf_token(),
             'auth' => [
                 'user' => $request->user(),
+                'fieldAttendance' => (bool) ($request->user()?->type === 'employee' && $request->user()?->employee?->field_attendance),
                 'roles' => fn() => $request->user()?->roles->pluck('name'),
                 'permissions' => fn() => $request->user()?->getAllPermissions()->pluck('name'),
             ],

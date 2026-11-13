@@ -34,6 +34,7 @@ return Application::configure(basePath: dirname(__DIR__))
             // Keep optional preload headers within hosting/proxy header limits.
             AddLinkHeadersForPreloadedAssets::using(5),
             DemoModeMiddleware::class,
+            \App\Http\Middleware\RestrictFieldEmployee::class,
         ]);
 
         $middleware->alias([

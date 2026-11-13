@@ -39,3 +39,10 @@ test('users can logout', function () {
     $this->assertGuest();
     $response->assertRedirect('/');
 });
+
+test('employee login ignores an administrator page left in the session', function () {
+    $user = \App\Models\User::factory()->create(['type' => 'employee', 'password' => bcrypt('test-password-123')]);
+    $this->withSession(['url.intended' => '/hr/field-attendance'])
+        ->post(route('login'), ['email' => $user->email, 'password' => 'test-password-123'])
+        ->assertRedirect(route('dashboard'));
+});

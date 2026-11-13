@@ -47,6 +47,13 @@ class AuthenticatedSessionController extends Controller
             return redirect()->route('verification.notice');
         }
 
+        // An employee may sign in after an administrator used the same browser.
+        // Do not send them to an admin-only URL left in the session.
+        if ($request->user()->type === 'employee') {
+            $request->session()->forget('url.intended');
+            return redirect()->route('dashboard');
+        }
+
         return redirect()->intended(route('dashboard', absolute: false));
     }
 

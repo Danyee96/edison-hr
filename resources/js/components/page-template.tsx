@@ -32,6 +32,7 @@ export function PageTemplate({
   noPadding = false,
   breadcrumbs
 }: PageTemplateProps) {
+  const { auth } = usePage().props as any;
   // Default breadcrumbs if none provided
   const pageBreadcrumbs: BreadcrumbItem[] = breadcrumbs || [
     {
@@ -44,7 +45,7 @@ export function PageTemplate({
     <AppLayout breadcrumbs={pageBreadcrumbs}>
       <Head title={`${title} - ${(usePage().props as any).globalSettings?.titleText || 'HRM'}`} />
       
-      <div className="flex h-full flex-1 flex-col gap-7 px-6 pb-8 pt-5 md:px-10">
+      <div className={`flex h-full min-w-0 flex-1 flex-col gap-6 pb-8 pt-4 md:px-10 ${auth?.fieldAttendance ? 'px-4 sm:px-6' : 'px-6'}`}>
         {/* Header with action buttons */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-4">
@@ -75,7 +76,7 @@ export function PageTemplate({
           {children}
         </div>
       </div>
-      <FloatingChatGpt />
+      {!auth?.fieldAttendance && <FloatingChatGpt />}
     </AppLayout>
   );
 }

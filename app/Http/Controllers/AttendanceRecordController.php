@@ -491,6 +491,7 @@ class AttendanceRecordController extends Controller
 
     public function clockIn(Request $request)
     {
+        abort_if(Employee::where('user_id', $request->user()->id)->where('field_attendance', true)->exists(), 403);
         if (Auth::user()->can('clock-in-out')) {
             try {
                 $validated = $request->validate([
@@ -598,6 +599,7 @@ class AttendanceRecordController extends Controller
 
     public function clockOut(Request $request)
     {
+        abort_if(Employee::where('user_id', $request->user()->id)->where('field_attendance', true)->exists(), 403);
         if (Auth::user()->can('clock-in-out')) {
             try {
                 $validated = $request->validate([

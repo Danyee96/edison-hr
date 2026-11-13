@@ -30,6 +30,10 @@ class DashboardController extends Controller
     {
         $user = auth()->user();
 
+        if ($user->type === 'employee' && $user->employee?->field_attendance) {
+            return app(FieldAttendanceController::class)->personal(request());
+        }
+
         // Super admin always gets dashboard
         if ($user->type === 'superadmin' || $user->type === 'super admin') {
             return $this->renderDashboard();
@@ -267,6 +271,7 @@ class DashboardController extends Controller
             'recentActivities' => [
                 'payrollRuns' => $recentPayrollRuns,
             ],
+            'fieldAttendance' => (bool) $user->employee?->field_attendance,
             'userType' => $user->type
         ];
 
@@ -330,6 +335,12 @@ class DashboardController extends Controller
             ->where('date', \Carbon\Carbon::today())
             ->first();
 
+        if ($user->employee?->field_attendance) {
+            $todayAttendance = \App\Models\AttendanceRecord::where('employee_id', $user->id)->whereNotNull('clock_in')->whereNull('clock_out')
+                ->whereExists(fn ($q) => $q->selectRaw('1')->from('field_attendance_captures')->whereColumn('field_attendance_captures.attendance_record_id', 'attendance_records.id')->where('field_attendance_captures.type', 'in'))
+                ->orderByDesc('date')->first() ?? $todayAttendance;
+        }
+
         // Get employee's assigned shift
         $employeeShift = null;
         $employee = \App\Models\Employee::where('user_id', $user->id)->first();
@@ -345,6 +356,7 @@ class DashboardController extends Controller
             ->get();
 
         foreach ($previousAttendance as $record) {
+            if ($user->employee?->field_attendance) continue;
             $recordDate = \Carbon\Carbon::parse($record->date);
             $shift = \App\Models\Shift::find($record->shift_id) ?? $employeeShift;
 
@@ -360,7 +372,7 @@ class DashboardController extends Controller
         }
 
         // Auto clock out if shift end time has passed for today
-        if ($todayAttendance && $todayAttendance->clock_in && !$todayAttendance->clock_out && $employeeShift) {
+        if (!$user->employee?->field_attendance && $todayAttendance && $todayAttendance->clock_in && !$todayAttendance->clock_out && $employeeShift) {
             $now = \Carbon\Carbon::now();
             $shiftEndTime = \Carbon\Carbon::today()->setTimeFromTimeString($employeeShift->end_time);
 
@@ -392,6 +404,7 @@ class DashboardController extends Controller
             'todayAttendance' => $todayAttendance,
             'currentTime' => \Carbon\Carbon::now()->format('H:i:s'),
             'employeeShift' => $employeeShift,
+            'fieldAttendance' => (bool) $user->employee?->field_attendance,
             'userType' => $user->type
         ];
         return Inertia::render('employee-dashboard', [

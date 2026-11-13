@@ -63,7 +63,7 @@ export function ProfileMenu() {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuGroup>
+        {!auth?.fieldAttendance && <DropdownMenuGroup>
           <DropdownMenuItem asChild>
             <Link href={route('profile')}>
               <User className="mr-2 h-4 w-4" />
@@ -71,7 +71,7 @@ export function ProfileMenu() {
             </Link>
           </DropdownMenuItem>
 
-        </DropdownMenuGroup>
+        </DropdownMenuGroup>}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout}>
           <LogOut className="mr-2 h-4 w-4" />

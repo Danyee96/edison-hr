@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import FieldAttendanceCapture from '@/components/field-attendance-capture';
 import { PageTemplate } from '@/components/page-template';
 import { RefreshCw, Bell, Users } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -55,7 +56,7 @@ export default function EmployeeDashboard({ dashboardData }: { dashboardData: Em
       const shift = dashboardData?.employeeShift;
       const attendance = dashboardData?.todayAttendance;
 
-      if (shift && attendance?.clock_in && !attendance?.clock_out && isClockedIn) {
+      if (!dashboardData?.fieldAttendance && shift && attendance?.clock_in && !attendance?.clock_out && isClockedIn) {
         const now = new Date();
         const shiftEnd = new Date(`1970-01-01T${shift.end_time}`);
         const currentTime = new Date(`1970-01-01T${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`);
@@ -247,7 +248,9 @@ export default function EmployeeDashboard({ dashboardData }: { dashboardData: Em
               )}
 
               {/* Clock In/Out Buttons */}
-              {hasPermission(permissions, 'clock-in-out') && (
+              {dashboardData?.fieldAttendance ? (
+                <div className="mb-6 flex justify-center"><FieldAttendanceCapture clockedIn={isClockedIn} completed={!!clockOutTime} /></div>
+              ) : hasPermission(permissions, 'clock-in-out') && (
                 <div className="flex justify-center gap-4 mb-6">
                   <button
                     className={`flex items-center justify-center px-8 py-4 rounded-lg font-semibold transition-colors shadow-md ${isClockedIn

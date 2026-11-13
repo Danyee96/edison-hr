@@ -1023,6 +1023,14 @@ Route::middleware(['auth', 'verified', 'setting'])->group(function () {
             Route::put('hr/attendance-policies/{attendancePolicy}/toggle-status', [\App\Http\Controllers\AttendancePolicyController::class, 'toggleStatus'])->middleware('permission:edit-attendance-policies')->name('hr.attendance-policies.toggle-status');
         });
 
+        Route::get('hr/my-attendance', [\App\Http\Controllers\FieldAttendanceController::class, 'personal'])->name('hr.field-attendance.my');
+        Route::get('hr/field-attendance', [\App\Http\Controllers\FieldAttendanceController::class, 'index'])->name('hr.field-attendance.index');
+        Route::put('hr/field-attendance/employees/{employee}', [\App\Http\Controllers\FieldAttendanceController::class, 'updateEmployee'])->name('hr.field-attendance.employee');
+        Route::put('hr/field-attendance/employees/{employee}/login', [\App\Http\Controllers\FieldAttendanceController::class, 'updateLogin'])->name('hr.field-attendance.login');
+        Route::post('hr/field-attendance/start', [\App\Http\Controllers\FieldAttendanceController::class, 'startAttempt'])->name('hr.field-attendance.start');
+        Route::post('hr/field-attendance/capture', [\App\Http\Controllers\FieldAttendanceController::class, 'capture'])->name('hr.field-attendance.capture');
+        Route::get('hr/field-attendance/photos/{capture}/{kind}', [\App\Http\Controllers\FieldAttendanceController::class, 'photo'])->name('hr.field-attendance.photo');
+
         // Attendance Records routes
         Route::middleware('permission:manage-attendance-records')->group(function () {
             Route::get('hr/attendance-records', [\App\Http\Controllers\AttendanceRecordController::class, 'index'])->name('hr.attendance-records.index');
