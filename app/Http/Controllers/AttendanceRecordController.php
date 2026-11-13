@@ -72,12 +72,12 @@ class AttendanceRecordController extends Controller
         return $employees;
     }
 
-    private function attendanceViewData(Request $request): array
+    public function attendanceViewData(Request $request, ?\Illuminate\Support\Collection $employeeScope = null, ?int $selectedOverride = null): array
     {
-        $employees = $this->getFilteredEmployees();
-        $selectedEmployeeId = $request->employee_id && $request->employee_id !== 'all'
+        $employees = $employeeScope ?? $this->getFilteredEmployees();
+        $selectedEmployeeId = $selectedOverride ?? ($request->employee_id && $request->employee_id !== 'all'
             ? (int) $request->employee_id
-            : (int) ($employees->first()['id'] ?? 0);
+            : (int) ($employees->first()['id'] ?? 0));
         $month = $request->month ?: now()->format('Y-m');
         $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
         $monthEnd = $monthStart->copy()->endOfMonth();

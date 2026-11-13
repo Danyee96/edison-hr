@@ -32,8 +32,9 @@ class FieldAttendanceController extends Controller
             'mode' => $request->routeIs('hr.field-attendance.my') ? 'monthly' : 'today',
             'month' => $month,
             'records' => $records->map(fn ($r) => ['date'=>$r->date->toDateString(), 'status'=>$r->status, 'clock_in'=>$r->clock_in, 'clock_out'=>$r->clock_out, 'total_hours'=>$r->total_hours]),
-            'todayAttendance' => $open ?? $today,
+            'todayAttendance' => $user->employee->field_attendance_test_mode ? $today : ($open ?? $today),
             'employeeName' => $user->name,
+            'testMode' => (bool) $user->employee->field_attendance_test_mode,
             'serverTime' => now()->toIso8601String(),
             'timezone' => config('app.timezone', 'UTC'),
             'workingDays' => collect(app(\App\Services\WorkingScheduleService::class)->schedule())
@@ -58,18 +59,30 @@ class FieldAttendanceController extends Controller
         $request->validate(['month' => 'nullable|date_format:Y-m', 'employee_id' => 'nullable|integer']);
         $employees = Employee::with(['user:id,name,email', 'department:id,name'])
             ->whereIn('created_by', getCompanyAndUsersId())->whereHas('user')->orderBy('employee_id')->get();
-        $selected = $employees->firstWhere('user_id', (int) $request->employee_id);
+        $fieldEmployees = $employees->filter(fn ($employee) => (bool) $employee->field_attendance)
+            ->sortBy(fn ($employee) => $employee->employee_id_display, SORT_NATURAL | SORT_FLAG_CASE)->values();
+        $selected = $fieldEmployees->firstWhere('user_id', (int) $request->employee_id) ?? $fieldEmployees->first();
         $month = $request->input('month', now()->format('Y-m'));
-        $start = Carbon::createFromFormat('!Y-m', $month);
-        $records = $selected && $selected->field_attendance
-            ? AttendanceRecord::where('employee_id', $selected->user_id)->whereIn('created_by', getCompanyAndUsersId())
-                ->whereBetween('date', [$start->copy()->startOfMonth(), $start->copy()->endOfMonth()])->orderBy('date')->get()
-            : collect();
-        $captures = DB::table('field_attendance_captures')->whereIn('attendance_record_id', $records->pluck('id'))->get()->groupBy('attendance_record_id');
+        $view = $selected ? app(AttendanceRecordController::class)->attendanceViewData(
+            $request,
+            $fieldEmployees->map(fn ($employee) => [
+                'id' => $employee->user_id, 'name' => $employee->user->name,
+                'employee_id' => $employee->employee_id_display, 'department_name' => $employee->department?->name ?? '',
+            ]),
+            $selected->user_id,
+        ) : ['days' => collect(), 'analytics' => []];
+        $captures = DB::table('field_attendance_captures')->whereIn('attendance_record_id', $view['days']->pluck('id')->filter())->get()->groupBy('attendance_record_id');
+        $days = $view['days']->map(function ($day) use ($captures) {
+            $day['captures'] = ($captures[$day['id']] ?? collect())->map(fn ($capture) => [
+                'id' => $capture->id, 'type' => $capture->type, 'latitude' => $capture->latitude,
+                'longitude' => $capture->longitude, 'accuracy' => $capture->accuracy, 'captured_at' => $capture->captured_at,
+            ])->values();
+            return $day;
+        });
         return Inertia::render('hr/field-attendance/index', [
             'employees' => $employees->map(fn ($e) => ['id'=>$e->id, 'user_id'=>$e->user_id, 'name'=>$e->user->name, 'email'=>$e->user->email, 'employee_id'=>$e->employee_id_display, 'department'=>$e->department?->name, 'field_attendance'=>(bool)$e->field_attendance]),
             'selectedEmployee' => $selected?->user_id, 'month' => $month,
-            'records' => $records->map(fn ($r) => ['id'=>$r->id, 'date'=>$r->date->toDateString(), 'status'=>$r->status, 'clock_in'=>$r->clock_in, 'clock_out'=>$r->clock_out, 'total_hours'=>$r->total_hours, 'captures'=>($captures[$r->id] ?? collect())->map(fn ($c) => ['id'=>$c->id, 'type'=>$c->type, 'latitude'=>$c->latitude, 'longitude'=>$c->longitude, 'accuracy'=>$c->accuracy, 'captured_at'=>$c->captured_at])]),
+            'attendanceDays' => $days, 'attendanceAnalytics' => $view['analytics'],
         ]);
     }
 
@@ -132,23 +145,37 @@ class FieldAttendanceController extends Controller
             $images[$name] = $bytes;
         }
         $paths = [];
+        $replacedPaths = [];
         try {
-            DB::transaction(function () use ($user, $employee, $data, $images, $attempt, &$paths) {
+            DB::transaction(function () use ($user, $employee, $data, $images, $attempt, &$paths, &$replacedPaths) {
                 User::whereKey($user->id)->lockForUpdate()->firstOrFail();
                 if (now()->timestamp >= $attempt['expires_at']) throw \Illuminate\Validation\ValidationException::withMessages(['attempt'=>'This attempt has expired. Please start again.']);
                 $now = Carbon::now(settings()['defaultTimezone'] ?? 'Asia/Karachi');
                 $record = AttendanceRecord::where('employee_id', $user->id)->whereDate('date', $now->toDateString())->lockForUpdate()->first();
                 if ($data['type'] === 'in') {
                     $openField = AttendanceRecord::where('employee_id', $user->id)->whereNotNull('clock_in')->whereNull('clock_out')->whereExists(fn ($q) => $q->selectRaw('1')->from('field_attendance_captures')->whereColumn('field_attendance_captures.attendance_record_id', 'attendance_records.id')->where('field_attendance_captures.type', 'in'))->exists();
-                    if ($openField) throw \Illuminate\Validation\ValidationException::withMessages(['type'=>'Please check out of your previous attendance first.']);
-                    if ($record && $record->clock_in) throw \Illuminate\Validation\ValidationException::withMessages(['type'=>'Already checked in today.']);
+                    if ($openField && !$employee->field_attendance_test_mode) throw \Illuminate\Validation\ValidationException::withMessages(['type'=>'Please check out of your previous attendance first.']);
+                    if ($record && $record->clock_in && !$employee->field_attendance_test_mode) throw \Illuminate\Validation\ValidationException::withMessages(['type'=>'Already checked in today.']);
                     $record ??= new AttendanceRecord(['employee_id'=>$user->id, 'date'=>$now->toDateString(), 'created_by'=>$employee->created_by]);
+                    if ($employee->field_attendance_test_mode && $record->exists) {
+                        $old = DB::table('field_attendance_captures')->where('attendance_record_id', $record->id)->get(['selfie_path', 'area_path']);
+                        foreach ($old as $photo) { $replacedPaths[] = $photo->selfie_path; $replacedPaths[] = $photo->area_path; }
+                        DB::table('field_attendance_captures')->where('attendance_record_id', $record->id)->delete();
+                        $record->fill(['clock_out'=>null, 'total_hours'=>0, 'work_time'=>null, 'overtime_hours'=>0, 'overtime_amount'=>0, 'late_minutes'=>0, 'early_leave_minutes'=>0, 'is_late'=>false, 'is_early_departure'=>false, 'is_absent'=>false]);
+                    }
                     $record->fill(['clock_in'=>$now->format('H:i:s'), 'shift_id'=>$employee->shift_id, 'attendance_policy_id'=>$employee->attendance_policy_id, 'status'=>'present']);
                     $record->save();
                     if ($record->shift_id) { $record->checkLateArrival(); $record->save(); }
                 } else {
-                    $record = AttendanceRecord::where('employee_id', $user->id)->whereNotNull('clock_in')->whereNull('clock_out')->whereExists(fn ($q) => $q->selectRaw('1')->from('field_attendance_captures')->whereColumn('field_attendance_captures.attendance_record_id', 'attendance_records.id')->where('field_attendance_captures.type', 'in'))->orderByDesc('date')->lockForUpdate()->first();
-                    if (!$record || !$record->clock_in || $record->clock_out || !DB::table('field_attendance_captures')->where('attendance_record_id', $record->id)->where('type','in')->exists()) throw \Illuminate\Validation\ValidationException::withMessages(['type'=>'A field check-in is required before check-out.']);
+                    if (!$employee->field_attendance_test_mode) {
+                        $record = AttendanceRecord::where('employee_id', $user->id)->whereNotNull('clock_in')->whereNull('clock_out')->whereExists(fn ($q) => $q->selectRaw('1')->from('field_attendance_captures')->whereColumn('field_attendance_captures.attendance_record_id', 'attendance_records.id')->where('field_attendance_captures.type', 'in'))->orderByDesc('date')->lockForUpdate()->first();
+                    }
+                    if (!$record || !$record->clock_in || (!$employee->field_attendance_test_mode && $record->clock_out) || !DB::table('field_attendance_captures')->where('attendance_record_id', $record->id)->where('type','in')->exists()) throw \Illuminate\Validation\ValidationException::withMessages(['type'=>'A field check-in is required before check-out.']);
+                    if ($employee->field_attendance_test_mode) {
+                        $old = DB::table('field_attendance_captures')->where('attendance_record_id', $record->id)->where('type', 'out')->get(['selfie_path', 'area_path']);
+                        foreach ($old as $photo) { $replacedPaths[] = $photo->selfie_path; $replacedPaths[] = $photo->area_path; }
+                        DB::table('field_attendance_captures')->where('attendance_record_id', $record->id)->where('type', 'out')->delete();
+                    }
                     $record->clock_out = $now->format('H:i:s');
                     $record->processAttendance();
                 }
@@ -163,6 +190,7 @@ class FieldAttendanceController extends Controller
             foreach ($paths as $path) Storage::disk('local')->delete($path);
             throw $e;
         }
+        foreach ($replacedPaths as $path) Storage::disk('local')->delete($path);
         $request->session()->forget('field_attendance_attempt');
         return back()->with('success', __('Field attendance recorded.'));
     }

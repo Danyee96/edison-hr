@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Search, Users, UserRoundCog } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Clock, LogIn, LogOut, Search, Users, UserRoundCog } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/custom-toast';
 import { router, usePage } from '@inertiajs/react';
@@ -9,8 +9,12 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 export default function FieldAttendance() {
-  const { employees = [], records = [], selectedEmployee, month } = usePage().props as any;
+  const { employees = [], attendanceDays = [], attendanceAnalytics = {}, selectedEmployee, month } = usePage().props as any;
   const [selected, setSelected] = useState<any>(null);
+  const [selectedMonth, setSelectedMonth] = useState(month);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(String(selectedEmployee || ''));
+  useEffect(() => { setSelectedEmployeeId(String(selectedEmployee || '')); }, [selectedEmployee]);
+  useEffect(() => { setSelectedMonth(month); }, [month]);
   const [loginEmployee, setLoginEmployee] = useState<any>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -38,22 +42,55 @@ export default function FieldAttendance() {
       onFinish: () => setUpdatingEmployee(null),
     });
   };
-  const navigate = (employee: number, date: string) => router.get(route('hr.field-attendance.index'), { employee_id: employee, month: date }, { preserveState: true });
-  const byDate = new Map(records.map((record: any) => [record.date, record]));
-  const [year, monthNumber] = month.split('-').map(Number);
-  const days = new Date(year, monthNumber, 0).getDate();
-  return <PageTemplate title="Field Attendance" url="/hr/field-attendance">
-    <div className="space-y-5 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3"><p>Choose employees who use field attendance, then select an employee to review their records.</p><Button onClick={() => setShowEmployees(true)}>Manage field employees</Button></div>
-      <div className="flex flex-wrap gap-3">
-        <select className="rounded-md border bg-background px-3 py-2" value={selectedEmployee || ''} onChange={e => navigate(Number(e.target.value), month)}>
-          <option value="">Select field employee</option>{fieldEmployees.map((e: any) => <option key={e.id} value={e.user_id}>{e.employee_id} — {e.name}</option>)}
+  const navigate = (employee: string, date: string) => router.get(route('hr.field-attendance.index'), { employee_id: employee || undefined, month: date }, { preserveState: true, preserveScroll: true });
+  const moveMonth = (amount: number) => {
+    const [year, monthNumber] = selectedMonth.split('-').map(Number);
+    const date = new Date(year, monthNumber - 1 + amount, 1);
+    const next = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    setSelectedMonth(next); navigate(selectedEmployeeId, next);
+  };
+  const formatTime = (value?: string | null) => value ? (window.appSettings?.formatTime?.(value) || value) : '–';
+  const formatHours = (value: number | string | null | undefined) => `${Number(value || 0).toFixed(2)}h`;
+  const formatMinutes = (value: number | string | null | undefined) => {
+    const total = Math.max(0, Number(value) || 0);
+    return total >= 60 ? `${Math.floor(total / 60)}h ${total % 60}m` : `${total}m`;
+  };
+  const currentEmployee = fieldEmployees.find((employee: any) => employee.user_id === Number(selectedEmployee));
+  const employeeLabel = currentEmployee ? `${currentEmployee.name} (${currentEmployee.employee_id})${currentEmployee.department ? ` (${currentEmployee.department})` : ''}` : 'Select a field employee';
+  const totalLateMinutes = attendanceDays.reduce((total: number, day: any) => total + (day.is_late ? Math.max(0, Number(day.late_minutes) || 0) : 0), 0);
+  const metrics = [
+    { label: 'Present', value: attendanceAnalytics.present || 0, tone: 'text-green-700' },
+    { label: 'Absent', value: attendanceAnalytics.absent || 0, tone: 'text-red-700' },
+    { label: 'No Clock In', value: attendanceAnalytics.no_clockin || 0, tone: 'text-orange-700' },
+    { label: 'Late Days', value: attendanceAnalytics.late_days || 0, tone: 'text-amber-700' },
+    { label: 'Total Late Time', value: formatMinutes(totalLateMinutes), tone: 'text-amber-700' },
+    { label: 'Total Hours', value: formatHours(attendanceAnalytics.total_hours), tone: 'text-slate-700' },
+    { label: 'Overtime', value: formatHours(attendanceAnalytics.overtime_hours), tone: 'text-indigo-700' },
+  ];
+  const statusStyle: Record<string, string> = {
+    present: 'bg-green-50 text-green-700 ring-green-600/20', absent: 'bg-red-50 text-red-700 ring-red-600/20',
+    half_day: 'bg-yellow-50 text-yellow-700 ring-yellow-600/20', on_leave: 'bg-blue-50 text-blue-700 ring-blue-600/20',
+    holiday: 'bg-purple-50 text-purple-700 ring-purple-600/20', no_record: 'bg-gray-50 text-gray-700 ring-gray-600/20',
+  };
+  const statusLabel = (day: any) => day.status === 'holiday' && day.holiday?.name ? `Holiday: ${day.holiday.name}` : day.status === 'on_leave' && day.leave_type?.name ? `On Leave (${day.leave_type.name})` : String(day.status || 'No record').replaceAll('_', ' ').replace(/\b\w/g, char => char.toUpperCase());
+  return <PageTemplate title="Field Attendance" url="/hr/field-attendance" actions={[{ label: 'Manage field employees', icon: <Users className="h-4 w-4" />, variant: 'outline', onClick: () => setShowEmployees(true) }]} breadcrumbs={[{ title: 'Dashboard', href: route('dashboard') }, { title: 'Field Attendance' }]} noPadding>
+    <div className="space-y-4">
+      <div className="rounded-lg bg-white p-4 shadow dark:bg-gray-900"><div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_180px_auto_auto_auto]">
+        <select aria-label="Field employee" className="h-10 min-w-0 rounded-md border bg-background px-3 text-sm" value={selectedEmployeeId} onChange={event => { setSelectedEmployeeId(event.target.value); navigate(event.target.value, selectedMonth); }}>
+          {fieldEmployees.length === 0 && <option value="">No field employees enabled</option>}
+          {fieldEmployees.map((e: any) => <option key={e.id} value={e.user_id}>{e.name} ({e.employee_id}){e.department ? ` (${e.department})` : ''}</option>)}
         </select>
-        <Input className="w-44" type="month" value={month} onChange={e => e.target.value && navigate(selectedEmployee || '', e.target.value)} />
-      </div>
-      {selectedEmployee && <div className="overflow-x-auto rounded-lg border"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="p-3">Date</th><th className="p-3">Status</th><th className="p-3">Check in</th><th className="p-3">Check out</th><th className="p-3">Hours</th><th className="p-3">Details</th></tr></thead><tbody>
-        {Array.from({ length: days }, (_, i) => { const date = `${month}-${String(i + 1).padStart(2, '0')}`; const record: any = byDate.get(date); return <tr className="border-b" key={date}><td className="p-3">{date}</td><td className="p-3">{record?.status || 'No record'}</td><td className="p-3">{record?.clock_in || '—'}</td><td className="p-3">{record?.clock_out || '—'}</td><td className="p-3">{record?.total_hours ?? '—'}</td><td className="p-3">{record?.captures?.length ? <Button size="sm" variant="outline" onClick={() => setSelected(record)}>View</Button> : '—'}</td></tr>; })}
-      </tbody></table></div>}
+        <Input aria-label="Attendance month" type="month" value={selectedMonth} onChange={event => { setSelectedMonth(event.target.value); if (event.target.value) navigate(selectedEmployeeId, event.target.value); }} />
+        <Button type="button" variant="outline" onClick={() => moveMonth(-1)}>Previous</Button><Button type="button" variant="outline" onClick={() => moveMonth(1)}>Next</Button><Button type="button" onClick={() => navigate(selectedEmployeeId, selectedMonth)}>Apply</Button>
+      </div></div>
+      {selectedEmployee ? <>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{metrics.map(metric => <div key={metric.label} className="rounded-lg border bg-white p-4 shadow-sm dark:bg-gray-900"><p className="text-xs font-medium uppercase text-muted-foreground">{metric.label}</p><p className={`mt-2 text-2xl font-semibold ${metric.tone}`}>{metric.value}</p></div>)}</div>
+        <div className="overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-gray-900"><div className="flex flex-wrap items-center justify-between gap-2 border-b p-4"><div><h2 className="font-semibold">{employeeLabel}</h2><p className="text-sm text-muted-foreground">{month}</p></div><span className="text-sm text-muted-foreground">{attendanceAnalytics.calendar_days || attendanceDays.length} days</span></div>
+          <div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-sm"><thead className="bg-muted/50 text-muted-foreground"><tr><th className="p-4 font-medium">Date</th><th className="p-4 font-medium">Day</th><th className="p-4 font-medium">Status</th><th className="p-4 font-medium">Duty</th><th className="p-4 font-medium">Clock In</th><th className="p-4 font-medium">Clock Out</th><th className="p-4 font-medium">Work Time</th><th className="p-4 font-medium">Late</th><th className="p-4 font-medium">Early</th><th className="p-4 text-right font-medium">Details</th></tr></thead><tbody>
+            {attendanceDays.map((day: any) => <tr key={day.date} className="border-t"><td className="p-4 font-medium">{day.date}</td><td className="p-4">{day.day_name}</td><td className="p-4"><div className="flex flex-wrap gap-1"><span className={`inline-flex rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusStyle[day.status] || statusStyle.no_record}`}>{statusLabel(day)}</span>{day.is_weekend && <span className="rounded-md bg-slate-50 px-2 py-1 text-xs text-slate-700 ring-1 ring-slate-600/20">Weekend</span>}{day.missing_clock_in && <span className="rounded-md bg-orange-50 px-2 py-1 text-xs text-orange-700 ring-1 ring-orange-600/20">No Clock In</span>}</div></td><td className="whitespace-nowrap p-4 font-mono text-xs">{formatTime(day.on_duty || day.shift?.start_time)} – {formatTime(day.off_duty || day.shift?.end_time)}</td><td className="whitespace-nowrap p-4 font-mono text-green-700"><LogIn className="mr-1 inline h-3 w-3" />{formatTime(day.clock_in)}</td><td className="whitespace-nowrap p-4 font-mono text-red-700"><LogOut className="mr-1 inline h-3 w-3" />{formatTime(day.clock_out)}</td><td className="whitespace-nowrap p-4 font-mono"><Clock className="mr-1 inline h-3 w-3" />{formatHours(day.total_hours)}</td><td className="p-4">{formatMinutes(day.late_minutes)}</td><td className="p-4">{formatMinutes(day.early_leave_minutes)}</td><td className="p-4 text-right">{day.captures?.length ? <Button size="sm" variant="outline" onClick={() => setSelected(day)}>View</Button> : '–'}</td></tr>)}
+          </tbody></table></div>
+        </div>
+      </> : <div className="rounded-lg border bg-white p-8 text-center text-sm text-muted-foreground dark:bg-gray-900">Enable field attendance for an employee to view their records.</div>}
     </div>
     <Dialog open={showEmployees} onOpenChange={setShowEmployees}>
       <DialogContent className="flex max-h-[min(85vh,760px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">

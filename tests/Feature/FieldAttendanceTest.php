@@ -57,3 +57,28 @@ test('an expired attempt cannot record attendance and must be restarted', functi
     $this->post(route('hr.field-attendance.capture'), [...$payload, 'attempt_token'=>$replacement])->assertSessionHasNoErrors();
     expect(AttendanceRecord::count())->toBe(1);
 });
+
+test('test mode replaces previous field punches and removes old photos', function () {
+    $this->employee->field_attendance_test_mode = true;
+    $this->employee->save();
+    $payload = ['type'=>'in', 'selfie'=>$this->photo, 'area'=>$this->photo, 'latitude'=>31.5, 'longitude'=>74.3, 'accuracy'=>10];
+    $punch = function (string $type) use ($payload) {
+        $token = $this->postJson(route('hr.field-attendance.start'), ['type'=>$type])->assertOk()->json('token');
+        $this->post(route('hr.field-attendance.capture'), [...$payload, 'attempt_token'=>$token, 'type'=>$type])->assertSessionHasNoErrors();
+    };
+    $punch('in');
+    $firstFiles = Storage::disk('local')->allFiles('field-attendance');
+    $this->travel(1)->minutes();
+    $punch('out');
+    $outFiles = Storage::disk('local')->allFiles('field-attendance');
+    expect($outFiles)->toHaveCount(4);
+    $this->travel(1)->minutes();
+    $punch('out');
+    expect(Storage::disk('local')->allFiles('field-attendance'))->toHaveCount(4);
+    $this->travel(1)->minutes();
+    $punch('in');
+    $this->assertDatabaseCount('field_attendance_captures', 1);
+    expect(Storage::disk('local')->allFiles('field-attendance'))->toHaveCount(2);
+    foreach ($firstFiles as $file) Storage::disk('local')->assertMissing($file);
+    expect(AttendanceRecord::first()->clock_out)->toBeNull();
+});

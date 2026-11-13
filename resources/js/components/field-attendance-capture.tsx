@@ -12,7 +12,8 @@ const steps: { key: Step; label: string; icon: typeof Camera }[] = [
   { key: 'location', label: 'Location', icon: MapPin },
 ];
 
-export default function FieldAttendanceCapture({ clockedIn, completed }: { clockedIn: boolean; completed: boolean }) {
+export default function FieldAttendanceCapture({ clockedIn, completed, action }: { clockedIn: boolean; completed: boolean; action?: 'in' | 'out' }) {
+  const isCheckout = action ? action === 'out' : clockedIn;
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>('selfie');
   const [selfie, setSelfie] = useState('');
@@ -75,7 +76,7 @@ export default function FieldAttendanceCapture({ clockedIn, completed }: { clock
       const response = await fetch(route('hr.field-attendance.start'), {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', ...csrfHeaders },
-        body: JSON.stringify({ type: clockedIn ? 'out' : 'in' }),
+        body: JSON.stringify({ type: isCheckout ? 'out' : 'in' }),
       });
       if (response.status === 419 || response.status === 401) throw new Error('Your session has expired. Refresh the page and sign in again.');
       if (!response.ok) throw new Error('Unable to start attendance. Please try again.');
@@ -111,7 +112,7 @@ export default function FieldAttendanceCapture({ clockedIn, completed }: { clock
       if (attemptId.current !== id) return;
       if (performance.now() >= deadline.current) { expire(); return; }
       router.post(route('hr.field-attendance.capture'), {
-        attempt_token: attemptToken.current, type: clockedIn ? 'out' : 'in', selfie, area,
+        attempt_token: attemptToken.current, type: isCheckout ? 'out' : 'in', selfie, area,
         latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy,
       }, {
         onSuccess: page => { if (page.props.flash?.error) { setError(String(page.props.flash.error)); return; } attemptId.current += 1; deadline.current = 0; setOpen(false); toast.success('Attendance recorded.'); },
@@ -124,9 +125,9 @@ export default function FieldAttendanceCapture({ clockedIn, completed }: { clock
   const close = (value: boolean) => { if (!value) { attemptId.current += 1; deadline.current = 0; attemptToken.current = ''; setSelfie(''); setArea(''); } setOpen(value); };
   const stepIndex = steps.findIndex(item => item.key === step);
   const timer = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`;
-  return <><Button className="min-h-12 w-full sm:w-auto" disabled={completed} onClick={start}>{completed ? 'Attendance completed' : clockedIn ? 'Field check out' : 'Field check in'}</Button>
+  return <><Button className="min-h-12 w-full sm:w-auto" disabled={completed} onClick={start}>{completed && !action ? 'Attendance completed' : isCheckout ? 'Field check out' : 'Field check in'}</Button>
     <Dialog open={open} onOpenChange={close}><DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] overflow-y-auto rounded-xl p-0 sm:max-w-xl">
-      <DialogHeader className="border-b px-4 pb-3 pt-4 pr-12 text-left sm:px-6 sm:pb-5 sm:pt-6"><DialogTitle className="text-xl">{clockedIn ? 'Field check out' : 'Field check in'}</DialogTitle><DialogDescription>Complete all three steps within 2 minutes.</DialogDescription></DialogHeader>
+      <DialogHeader className="border-b px-4 pb-3 pt-4 pr-12 text-left sm:px-6 sm:pb-5 sm:pt-6"><DialogTitle className="text-xl">{isCheckout ? 'Field check out' : 'Field check in'}</DialogTitle><DialogDescription>Complete all three steps within 2 minutes.</DialogDescription></DialogHeader>
       <div className="space-y-4 p-4 sm:space-y-5 sm:p-6">
         <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/40 px-4 py-3"><div className="flex items-center gap-2 text-sm font-medium"><Clock3 className="h-4 w-4" />Time remaining</div><span aria-live="off" className={`font-mono text-lg font-semibold ${secondsLeft <= 30 ? 'text-red-600' : 'text-foreground'}`}>{timer}</span></div>
         <ol className="grid grid-cols-3 gap-2" aria-label="Attendance steps">{steps.map((item, index) => { const done = !expired && index < stepIndex; const active = !expired && index === stepIndex; const Icon = item.icon; return <li key={item.key} aria-current={active ? 'step' : undefined} className={`rounded-lg border px-2 py-3 text-center ${active ? 'border-primary bg-primary/10 text-primary' : done ? 'border-green-200 bg-green-50 text-green-700 dark:bg-green-950/30' : 'text-muted-foreground'}`}><div className="mx-auto mb-1 flex h-7 w-7 items-center justify-center rounded-full border border-current">{done ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}</div><span className="block text-xs font-semibold sm:text-sm">{index + 1}. {item.label}</span></li>; })}</ol>
